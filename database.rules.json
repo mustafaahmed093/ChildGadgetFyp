@@ -1,0 +1,35 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "deviceCredentials": {
+      ".read": false,
+      ".write": false
+    },
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "children": {
+          "$childId": { ".validate": "newData.hasChildren(['name'])" }
+        }
+      }
+    },
+    "children": {
+      "$childId": {
+        ".read": "auth != null && root.child('children').child($childId).child('parentUid').val() === auth.uid",
+        "latestLocation": { ".write": false },
+        "Data": { ".write": false },
+        "locationHistory": { ".write": false, ".indexOn": ["timestamp"] },
+        "device": { ".write": false },
+        "safeZones": {
+          "$zoneId": {
+            ".write": "auth != null && root.child('children').child($childId).child('parentUid').val() === auth.uid",
+            ".validate": "newData.hasChildren(['name','lat','lng','radiusMeters']) && newData.child('lat').isNumber() && newData.child('lat').val() >= -90 && newData.child('lat').val() <= 90 && newData.child('lng').isNumber() && newData.child('lng').val() >= -180 && newData.child('lng').val() <= 180 && newData.child('radiusMeters').isNumber() && newData.child('radiusMeters').val() >= 25 && newData.child('radiusMeters').val() <= 10000"
+          }
+        },
+        "alerts": { ".write": false }
+      }
+    }
+  }
+}

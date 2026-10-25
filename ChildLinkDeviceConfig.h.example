@@ -1,0 +1,18 @@
+// Copy this file to ChildLinkDeviceConfig.h and fill in your own values.
+// ChildLinkDeviceConfig.h is ignored by git so Wi-Fi and device tokens stay local.
+#define CHILDLINK_WIFI_SSID "YOUR_WIFI_NAME"
+#define CHILDLINK_WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
+#define CHILDLINK_CHILD_ID "CHILD_ID_FROM_APP"
+#define CHILDLINK_DEVICE_TOKEN "ONE_TIME_DEVICE_TOKEN_FROM_APP"
+// Required: obtain the serving function's trust-chain root CA from an
+// authoritative certificate source and embed the exact PEM in the private
+// ChildLinkDeviceConfig.h. Do not use setInsecure() or a guessed certificate.
+// Example syntax (replace the placeholder with the verified PEM contents):
+// #define CHILDLINK_SERVER_ROOT_CA R"CHILDLINK_CA(
+// -----BEGIN CERTIFICATE-----
+// REPLACE_WITH_VERIFIED_ROOT_CA_PEM
+// -----END CERTIFICATE-----
+// )CHILDLINK_CA"
+
+// Optional: define only after confirming the physical SOS switch wiring/GPIO.
+// #define CHILDLINK_SOS_PIN 27

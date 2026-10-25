@@ -1,0 +1,14 @@
+{
+  "name": "childlink-functions",
+  "private": true,
+  "engines": { "node": "20" },
+  "main": "index.js",
+  "scripts": {
+    "test": "node smoke_test.js && node location_state_test.mjs",
+    "test:smoke": "node smoke_test.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.1.1"
+  }
+}
