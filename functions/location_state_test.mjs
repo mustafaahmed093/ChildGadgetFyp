@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { deviceState, firebaseReadError, isSosRisingEdge, locationLabel, locationState, normalizePoint } from '../web/location-state.mjs';
+import { classifyZone, deviceState, distanceMeters, firebaseReadError, isSosRisingEdge, locationLabel, locationState, normalizePoint } from '../web/location-state.mjs';
 
 const now = 1_800_000_000_000;
 const current = { lat: 33.7, lng: 73.1, timestamp: now - 20_000 };
@@ -29,6 +29,13 @@ assert.equal(isSosRisingEdge(1, 1), false);
 assert.equal(isSosRisingEdge(1, 0), false);
 assert.equal(isSosRisingEdge(undefined, 1), false);
 assert.equal(isSosRisingEdge('0', '1'), true);
+const zoneCenter = { lat: 33.6844, lng: 73.0479 };
+assert.ok(distanceMeters(zoneCenter, { lat: 33.6845, lng: 73.0479 }) < 20);
+const outsideZone = distanceMeters(zoneCenter, { lat: 33.69, lng: 73.0479 });
+assert.equal(classifyZone(outsideZone, 150, undefined).transition, null);
+assert.equal(classifyZone(outsideZone, 150, true).transition, 'geofence_exit');
+assert.equal(classifyZone(outsideZone, 150, false).transition, null);
+assert.equal(classifyZone(distanceMeters(zoneCenter, { lat: 33.6845, lng: 73.0479 }), 150, false).transition, 'geofence_enter');
 assert.equal(normalizePoint({ lat: 91, lng: 73, timestamp: now }), null);
 assert.equal(normalizePoint({ lat: 33, lng: -181, timestamp: now }), null);
 assert.equal(normalizePoint({ lat: 0, lng: 0, timestamp: now }), null);

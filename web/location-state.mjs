@@ -29,6 +29,27 @@ export function isSosRisingEdge(previous, current) {
   return Number(previous) === 0 && Number(current) === 1;
 }
 
+export function distanceMeters(a, b) {
+  const radians = Math.PI / 180;
+  const latitudeDelta = (b.lat - a.lat) * radians;
+  const longitudeDelta = (b.lng - a.lng) * radians;
+  const haversine = Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(a.lat * radians) * Math.cos(b.lat * radians) * Math.sin(longitudeDelta / 2) ** 2;
+  return 6_371_000 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
+export function classifyZone(distance, radius, previousInside, margin = 20) {
+  const inside = previousInside === undefined
+    ? distance <= radius
+    : previousInside
+      ? distance <= radius + margin
+      : distance <= Math.max(0, radius - margin);
+  const transition = previousInside === undefined || previousInside === inside
+    ? null
+    : inside ? 'geofence_enter' : 'geofence_exit';
+  return { inside, transition };
+}
+
 export function locationState(point, now = Date.now(), staleAfterMs = 15_000) {
   const validPoint = normalizePoint(point);
   if (!validPoint) return 'LOCATION UNAVAILABLE';
