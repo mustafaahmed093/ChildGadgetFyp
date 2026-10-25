@@ -58,6 +58,7 @@ async function main(){
     const latest=records.get(`children/${created.childId}/latestLocation`);
     assert.equal(latest.lat,33.6844);
     assert.equal(latest.lng,73.0479);
+    assert.equal(latest.lastSeen,latest.timestamp);
     response={};
     await functions.ingestLocation({...request,get:()=> 'incorrect-device-token'},res);
     assert.equal(response.status,401,'a wrong device key must be rejected');

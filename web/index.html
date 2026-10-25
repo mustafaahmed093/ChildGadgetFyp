@@ -14,7 +14,7 @@
     <p class="muted">Sign in to check your child’s latest shared location and safety updates.</p>
     <form id="auth-form"><label for="email">Email</label><input id="email" type="email" autocomplete="username" required placeholder="you@example.com"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required placeholder="Your password"><div id="auth-error" class="error" role="status"></div><button id="auth-submit" class="button primary" type="submit">Sign in</button></form>
     <button id="auth-mode" class="link-button" type="button">Create a parent account</button>
-    <div id="demo-login" class="demo-login hidden"><strong>Development test tools</strong><button id="use-demo" class="button primary" type="button">Open simulated test view</button><small>SIMULATED TEST DATA only. This view is isolated from Firebase and real accounts.</small></div>
+    <p id="firebase-status-auth" class="firebase-status" role="status">Firebase: initializing…</p>
     <details class="setup"><summary>Firebase setup</summary><p>Add your Firebase web configuration in <code>firebase-config.js</code> and enable Email/Password sign-in to use real accounts.</p></details>
   </div>
 </section>
@@ -23,10 +23,9 @@
   <div class="app-grid"><aside class="sidebar"><div class="side-title">YOUR FAMILY</div><div class="child-card"><span class="child-avatar">C</span><div><strong id="side-child-name">Child</strong><small id="side-device-status" class="status">Location unavailable</small></div></div><nav id="nav" class="nav bottom-nav" aria-label="Main navigation">
     <button class="nav-item active" data-view="overview"><span class="nav-icon">⌂</span><span>Home</span></button><button class="nav-item" data-view="tracking"><span class="nav-icon">⌖</span><span>Map</span></button><button class="nav-item" data-view="zones"><span class="nav-icon">♧</span><span>Safe Zones</span></button><button class="nav-item" data-view="alerts"><span class="nav-icon">♧</span><span>Alerts</span></button>
   </nav><p class="sidebar-note">Location and alerts depend on the child’s device sharing valid data.</p></aside>
-  <main class="content"><div id="notice" class="notice hidden" role="status"></div>
+  <main class="content"><p id="firebase-status" class="firebase-status" role="status">Firebase: waiting for sign-in</p><div id="notice" class="notice hidden" role="status"></div>
     <section id="view-overview" class="view">
       <div class="welcome-row"><div><div id="section-eyebrow" class="eyebrow">YOUR FAMILY</div><h1 id="page-title">Good morning</h1><p class="muted">Here’s the latest shared update.</p></div><button class="button" data-goto="alerts">♧ <span>Alerts</span></button></div>
-      <article id="demo-controls" class="main-card demo-controls hidden"><div><strong>Demo controls</strong><p class="muted">Simulated device data only · nothing is sent to Firebase.</p></div><div class="demo-control-actions"><button id="demo-move" class="button primary" type="button">Simulate movement</button><button id="demo-sos" class="button danger" type="button">Trigger sample SOS</button></div></article>
       <div id="sos-banner" class="sos-banner hidden"><span class="sos-icon">!</span><div><strong>SOS alert received</strong><p id="sos-copy"></p></div><button class="button danger" data-goto="alerts">View alert</button></div>
       <article id="onboarding-card" class="main-card hidden"><h2>Connect your child’s tracker</h2><p class="muted">Create a protected child profile, then use its device key in the tracker setup.</p><form id="child-form"><label for="new-child-name">Child’s name</label><input id="new-child-name" maxlength="60" required placeholder="Child name"><button id="create-child" type="submit" class="button primary">Create child profile</button><div id="child-form-error" class="error"></div></form><div id="device-setup" class="device-setup hidden"><strong>Tracker key · shown once</strong><p class="hint">Copy this key into your tracker setup and keep it private.</p><label>Child ID</label><code id="new-child-id"></code><label>Device key</label><code id="new-device-token"></code><button id="copy-device-token" class="button" type="button">Copy device details</button></div></article>
       <article class="child-location-card"><div class="child-card-top"><div class="child-portrait">⌖</div><div class="child-card-name"><strong id="home-child-name">Child</strong><small id="stat-connection">Connection unknown</small></div><span id="home-location-state" class="safe-pill">LOCATION</span></div><div class="child-location-meta"><span>⌖ <b id="stat-location">Unavailable</b></span><span id="stat-updated">No valid GPS fix yet</span></div><div class="child-card-footer"><span id="stat-seen">Device status unavailable</span><button class="button light-button" data-goto="tracking">View location <span>→</span></button></div></article>
@@ -44,6 +43,20 @@
     <section id="view-alerts" class="view hidden"><div class="welcome-row"><div><div class="eyebrow">UPDATES</div><h1>Alerts</h1><p class="muted">SOS and safe-zone events shared by the device.</p></div></div><div class="main-card"><div id="alert-list"></div></div></section>
     <footer class="footer-note">ChildLink displays information shared by the connected device. Last known locations may be out of date.</footer>
   </main></div>
+</section>
+<section id="sos-modal" class="sos-modal hidden" role="alertdialog" aria-modal="true" aria-labelledby="sos-modal-title" aria-describedby="sos-modal-coordinates">
+  <div class="sos-dialog">
+    <div class="sos-pulse" aria-hidden="true">!</div>
+    <h1 id="sos-modal-title">SOS ALERT - Child needs help!</h1>
+    <p>Alert time: <strong id="sos-modal-time"></strong></p>
+    <p>Last known coordinates: <strong id="sos-modal-coordinates"></strong></p>
+    <a id="sos-map-link" class="button sos-map-link hidden" target="_blank" rel="noopener noreferrer">Open in Google Maps</a>
+    <div class="sos-actions">
+      <button id="sos-acknowledge" class="button primary" type="button">Acknowledge</button>
+      <button id="sos-call-guardian" class="button danger" type="button">Call Guardian</button>
+      <button id="sos-play-alarm" class="button" type="button">Play alarm</button>
+    </div>
+  </div>
 </section>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script type="module" src="./app.js"></script>
 </body></html>

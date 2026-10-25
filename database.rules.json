@@ -15,6 +15,10 @@
         }
       }
     },
+    "Data": {
+      ".read": "auth != null",
+      ".write": false
+    },
     "children": {
       "$childId": {
         ".read": "auth != null && root.child('children').child($childId).child('parentUid').val() === auth.uid",

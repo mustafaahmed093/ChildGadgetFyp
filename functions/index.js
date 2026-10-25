@@ -44,7 +44,7 @@ exports.ingestLocation = onRequest({maxInstances:1,invoker:'public'},async(req,r
   if(!await authenticateDevice(req,childId)){res.status(401).send('Unauthorized');return}
   if(!valid(lat,lng)||!Number.isSafeInteger(timestamp)||timestamp>Date.now()+60000||Date.now()-timestamp>120000){res.status(400).send('Invalid or stale location');return}
   const eventId=String(req.body?.eventId||`gps_${timestamp}_${lat.toFixed(6)}_${lng.toFixed(6)}`).replace(/[.#$\[\]/]/g,'_').slice(0,128);
-  await db.ref(`children/${childId}/latestLocation`).set({lat,lng,timestamp,eventId,...(Number.isFinite(Number(req.body?.accuracyMeters))?{accuracyMeters:Number(req.body.accuracyMeters)}:{})});
+  await db.ref(`children/${childId}/latestLocation`).set({lat,lng,timestamp,lastSeen:timestamp,eventId,...(Number.isFinite(Number(req.body?.accuracyMeters))?{accuracyMeters:Number(req.body.accuracyMeters)}:{})});
   res.status(202).json({accepted:true,eventId});
 });
 

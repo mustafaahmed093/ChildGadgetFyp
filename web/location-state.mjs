@@ -3,19 +3,36 @@ export function normalizePoint(data) {
   const lat = Number(data.lat ?? data.latitude ?? data.latt);
   const lng = Number(data.lng ?? data.longitude ?? data.longg);
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) return null;
-  return { ...data, lat, lng, timestamp: data.timestamp ?? data.updatedAt ?? data.recordedAt ?? null };
+  return { ...data, lat, lng, timestamp: data.timestamp ?? data.lastSeen ?? data.updatedAt ?? data.recordedAt ?? null };
 }
 
 export function isFresh(value, limitMs, now = Date.now()) {
-  const timestamp = typeof value === 'number' ? value : typeof value === 'string' ? (Date.parse(value) || 0) : 0;
+  const timestamp = timestampMs(value);
   return timestamp > 0 && now - timestamp <= limitMs && timestamp <= now + 60_000;
 }
 
-export function locationState(point, device = {}, now = Date.now(), staleAfterMs = 120_000) {
+function timestampMs(value) {
+  if (typeof value === 'number') return value;
+  if (typeof value !== 'string') return 0;
+  const text = value.trim();
+  if (!text) return 0;
+  const numeric = Number(text);
+  return Number.isFinite(numeric) ? numeric : Date.parse(text) || 0;
+}
+
+export function deviceState(point, now = Date.now(), gpsTimeoutMs = 15_000) {
+  const validPoint = normalizePoint(point);
+  return validPoint && isFresh(validPoint.timestamp, gpsTimeoutMs, now) ? 'ONLINE' : 'OFFLINE';
+}
+
+export function isSosRisingEdge(previous, current) {
+  return Number(previous) === 0 && Number(current) === 1;
+}
+
+export function locationState(point, now = Date.now(), staleAfterMs = 15_000) {
   const validPoint = normalizePoint(point);
   if (!validPoint) return 'LOCATION UNAVAILABLE';
-  if (device.online === false || device.connected === false || String(device.status || '').toLowerCase() === 'offline') return 'OFFLINE';
-  return isFresh(validPoint.timestamp, staleAfterMs, now) ? 'LIVE' : 'STALE';
+  return deviceState(validPoint, now, staleAfterMs) === 'ONLINE' ? 'LIVE' : 'OFFLINE';
 }
 
 export function locationLabel(state) {

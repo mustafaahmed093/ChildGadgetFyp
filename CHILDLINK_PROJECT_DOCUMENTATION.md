@@ -80,7 +80,7 @@ No root-level `package.json`, `.env` file, or private `ChildLinkDeviceConfig.h` 
 This is the page skeleton. It contains:
 
 - The sign-in/register form (`auth-form`, `email`, `password`, `auth-mode`) and an error region.
-- An explicitly labeled development-only simulated view. The button is hidden unless the URL contains `?dev=1`.
+- No demo account, simulated location, or fake SOS view. The app reads account and device data only from Firebase.
 - The authenticated application shell: Home, Map/Tracking, Safe Zones, and Alerts views.
 - A child-onboarding form. It asks for a child name and displays the returned child ID/device token once after successful setup.
 - Map containers for the home overview, full tracking view, and safe-zone selection.
@@ -105,12 +105,12 @@ This file is intentionally compact (many handlers are one physical source line).
 1. **Imports and initialization.** Imports the configuration and location helpers, then Firebase App, Auth, Database, and Functions SDK modules. It checks required config fields, initializes the app, obtains Auth/Database/Functions handles, and starts browser-local auth persistence. The optional `?emulator=1` branch connects these SDKs to ports 9099, 9000, and 5001. Emulator mode requires the emulators to be running; the Python server does not start them.
 2. **Authentication.** The form toggles between login and registration. It waits for `setPersistence` before calling `createUserWithEmailAndPassword` or `signInWithEmailAndPassword`. `onAuthStateChanged` clears stale view data, shows the app for a user, and subscribes to that user's child links; on sign-out it restores the auth screen. `authError` maps common Firebase auth codes to readable messages. A separate listener error handler displays auth-state errors.
 3. **Child onboarding.** When an authenticated user has no child links, `watchChildren` shows the onboarding form. Submitting it calls callable Function `createChild`. On success the browser shows the new child ID and one-time device token. The function, not the browser, creates the protected ownership and credential records. The app has no need for a separate parent profile record: its selector reads the authenticated user's `users/{uid}/children` link.
-4. **Child selection and database subscriptions.** `watchChildren` listens to `users/{parentUid}/children`. It selects the currently selected child if it remains linked; otherwise it selects the first linked record. `selectChild` removes old child subscriptions, loads a cached point if present, resets child-specific display data, and subscribes to the new child. `watchChildData` attaches listeners to `latestLocation`, legacy `Data`, `device`, `safeZones`, `alerts`, and ordered `locationHistory`. `watch` stores each unsubscribe callback so account/child changes can remove listeners. On Firebase read errors it reports an error and re-renders while leaving a cached last point available.
+4. **Child selection and database subscriptions.** `watchChildren` listens to `users/{parentUid}/children`. It selects the currently selected child if it remains linked; otherwise it selects the first linked record. If the signed-in parent has no linked child, the demo compatibility path subscribes to root `/Data` (`latt`, `longg`, `sos`) so the existing legacy record can be shown. This shared fallback is not owner-scoped. `selectChild` loads a cached point if present and subscribes to the selected child's `latestLocation`, legacy `Data`, `device`, `safeZones`, `alerts`, and ordered `locationHistory`. `watch` stores unsubscribe callbacks. Firebase status is also monitored via `.info/connected`; read errors are logged with their Firebase code and displayed on screen.
 5. **Location and map rendering.** `renderAll` normalizes the point, asks `location-state.mjs` for its state, updates status text, timestamps and coordinates, and repositions markers. It automatically centers when the first usable location is received; later points move markers without continually recentering the map. `centerOnChild` is the explicit recenter button. `initMaps` creates the three Leaflet maps and adds OpenStreetMap tiles with attribution. If Leaflet is unavailable, the app reports the map problem while location details can still render.
 6. **Safe zones.** Map clicks fill the selected zone center coordinates. The zone form validates coordinate ranges and a 25–10,000 metre radius, then writes to `children/{childId}/safeZones/{zoneId}` using Firebase `set` and a server timestamp. Edit populates the same form; delete uses Firebase `remove`. `renderZones` creates the list and `renderZoneMap` draws saved circles across the maps. Zone save/delete are authenticated browser writes and are constrained by RTDB rules.
 7. **History and alerts.** The app sorts recent history newest-first, filters by date, and loads older points in pages of up to 100. Alert rendering recognizes SOS and geofence enter/exit records. An alert with valid coordinates can open its map point. Acknowledgement calls `acknowledgeAlert`; the Function checks parent ownership before writing acknowledgement fields.
 8. **Escaping and time helpers.** `escapeHtml` is used for text placed in generated HTML; `dateText`/`timeMs` format stored times. These do not validate ownership; database rules and Functions do that.
-9. **Explicit demo helpers.** `startDemoMode`, `simulateDemoMove`, and `simulateDemoSos` create in-memory sample values only when `?dev=1` is explicitly present. They do not call Firebase. They are not an account or evidence of a real tracker. The normal login route has no automatic fake-data fallback.
+9. **Firebase-only data.** The app has no simulated location data. GPS location, safe zones, history, and alerts are read from Firebase. Online/offline UI status is based only on GPS location freshness.
 
 Other named helpers include `clearData` (unsubscribe and clear the old child/session display), `showNotice`/`hideNotice` (connection/status banner), `readCachedLocation`/`cacheLocation` (per-child browser last-known point), `renderZones`, `renderZoneMap`, `renderRecent`, `renderHistory`, `locationHtml`, `alertHtml`, `renderAlerts`, `loadOlderHistory`, and `showView`. DOM event handlers wire the forms, nav buttons, map controls, alert acknowledgement, zone edit/delete, and sign-out.
 
@@ -118,13 +118,16 @@ The live UI path depends on successful Auth, correctly linked parent/child recor
 
 #### `web/location-state.mjs`
 
-- `normalizePoint(data)` accepts `lat`/`lng`, `latitude`/`longitude`, or legacy `latt`/`longg`; timestamps can be `timestamp`, `updatedAt`, or `recordedAt`. It converts coordinates to numbers and rejects non-finite/out-of-range coordinates and the project's `(0,0)` invalid sentinel. It returns a normalized copy or `null`.
+- `normalizePoint(data)` accepts `lat`/`lng`, `latitude`/`longitude`, or legacy `latt`/`longg`; timestamps can be `timestamp`, `lastSeen`, `updatedAt`, or `recordedAt`. It converts numeric strings and rejects non-finite/out-of-range coordinates and the project's `(0,0)` invalid sentinel. It returns a normalized copy or `null`.
 - `isFresh(value, limitMs, now)` accepts numeric epoch milliseconds or parseable date strings, rejects absent/old timestamps and timestamps more than one minute in the future.
-- `locationState(point, device, now, staleAfterMs)` returns `LOCATION UNAVAILABLE` with no valid point; `OFFLINE` only if the device record explicitly says offline; otherwise `LIVE` for a fresh point and `STALE` for an older/untimestamped point. The app configures a two-minute location freshness window.
+- `deviceState(point, now, gpsTimeoutMs)` reports `ONLINE` only when a valid GPS point has arrived within the configured 15-second window; missing, invalid, untimestamped, or old GPS data means `OFFLINE`.
+- `locationState(point, now, staleAfterMs)` returns `LOCATION UNAVAILABLE` when no valid point exists, `LIVE` for a fresh GPS point, and `OFFLINE` for a valid but old GPS point. The app retains and labels the old point as last known.
 - `locationLabel(state)` supplies a human-readable live/last-known/unavailable label.
 - `firebaseReadError(error)` maps permission/network/other Firebase read failures to a message. It does not make the network reconnect; Firebase listeners handle their own reconnection behavior.
 
-`OFFLINE` does not mean a point is merely old. The backend currently marks the device online on a fresh heartbeat, but there is no scheduled backend process in this repository that changes it to offline after missed heartbeats. A missed heartbeat therefore leaves device state unconfirmed and location state stale, not proven offline.
+The browser recalculates GPS-data status every 3 seconds. After 15 seconds without a valid GPS location update it displays `Device OFFLINE - Showing Last Known Location` and keeps any saved point on the map. If a record lacks a timestamp, the browser tracks client-observed coordinate changes and caches the observation time; a cold first read cannot establish when that old record was originally written. The app cannot distinguish a powered-off device from missing GPS fix, Wi-Fi, internet, or backend connectivity. Device telemetry is not used to decide this UI status.
+
+`/Data` is a demo-only compatibility path when a signed-in account has no linked child record. The local RTDB rules allow any authenticated account to read that single shared tracker record. This reveals the same child's location to every signed-in account that can read the path; production must use parent-owned `children/{childId}` records instead. Rules are not deployed automatically.
 
 ### 3.2 Firebase Functions
 
@@ -187,7 +190,7 @@ Replaces Firebase modules with a small in-memory mock and loads the real Functio
 
 #### `functions/location_state_test.mjs`
 
-Uses Node assertions against the real `web/location-state.mjs` helper. It tests current/stale/missing/offline states, labels, modern and legacy coordinate formats, invalid/out-of-range coordinates and `(0,0)`, cached stale point handling, and network/permission error messages. It is a unit test and does not create a browser session or make a Firebase request.
+Uses Node assertions against the real `web/location-state.mjs` helper. It tests fresh GPS online status, expired/missing/offline locations, labels, modern and legacy coordinate formats, invalid/out-of-range coordinates and `(0,0)`, cached last-known point handling, and network/permission error messages. It is a unit test and does not create a browser session or make a Firebase request.
 
 #### `functions/package.json` and `package-lock.json`
 
@@ -228,12 +231,11 @@ The timestamp may be omitted; the endpoint then uses server receipt time. If pre
 
 ### C. Location and device status
 
-- **LIVE:** Valid point with a timestamp within the configured 120,000ms freshness window and no explicit offline device flag.
-- **STALE:** A valid last-known point exists but its timestamp is older, absent, or otherwise not fresh. The marker can remain visible with last-known wording.
-- **OFFLINE:** A valid point exists and the device record explicitly says offline (`online:false`, `connected:false`, or status string `offline`).
+- **LIVE / Online:** A valid GPS point with a timestamp within the configured 15,000ms freshness window. The marker follows realtime listener updates.
+- **OFFLINE:** No valid GPS point has arrived within 15 seconds. A prior point remains visible as last known; offline means GPS data is not arriving, not proof the device lost power.
 - **LOCATION UNAVAILABLE:** No valid point is available. This takes precedence even if an offline flag exists.
 
-The Functions set a recent heartbeat to online. No scheduled heartbeat monitor writes offline after silence, so a lost heartbeat alone must not be explained as proof the wearable is offline. Data triggers can mark device `lastSeen` on accepted locations too.
+The UI derives online/offline solely from the latest GPS point's `timestamp`/`lastSeen` or, for legacy records without a timestamp, the most recent client-observed coordinates change. It does not depend on telemetry heartbeat fields.
 
 ### D. Safe zones
 
@@ -243,7 +245,7 @@ This is source behavior. It still requires matching deployed rules, trigger depl
 
 ### E. SOS
 
-When optional GPIO is configured and confirmed, firmware polls a pulled-up input; a debounced LOW press calls `sendSosEvent`. The event ID/time/available recent fix are stored in ESP32 Preferences so a failed HTTP attempt can retry with the same ID. Telemetry goes to `ingestTelemetry`, which uses the same child device-token check and writes `children/{id}/device/telemetry`. `processWearableEvents` updates heartbeat state and creates one `alerts/sos_{eventId}` record by RTDB transaction. No valid fix means null alert coordinates, not a guessed location. The parent listener renders the alert; acknowledgement goes through an owner-checking callable.
+When optional GPIO is configured and confirmed, firmware polls a pulled-up input; a debounced LOW press calls `sendSosEvent`. The event ID/time/available recent fix are stored in ESP32 Preferences so a failed HTTP attempt can retry with the same ID. Telemetry goes to `ingestTelemetry`, which uses the same child device-token check and writes `children/{id}/device/telemetry`. `processWearableEvents` updates heartbeat state and creates one `alerts/sos_{eventId}` record by RTDB transaction. No valid fix means null alert coordinates, not a guessed location. In addition to child alert records, the web app watches `sos` rising edges in the selected legacy `Data` record, shows a modal that stays open until acknowledged, and saves a local SOS history. The modal shows time and valid coordinates, a Google Maps link when coordinates exist, an alarm control with autoplay fallback, and a guardian-call placeholder. The edge listener uses the initial snapshot as its baseline and will not replay a pulse that happened while the app was closed; a single `sos` flag is not a durable event log. Child alert acknowledgement goes through an owner-checking callable.
 
 Unknown and required before hardware test: exact SOS pin and switch wiring, local Wi-Fi, child ID/device token, verified root CA, matching deployed function version, and whether the physically flashed firmware matches this sketch. A button cannot produce a physical event until the correct pin is defined and wired.
 
@@ -269,6 +271,7 @@ On every accepted latest-location update, the trusted database trigger uses its 
 | `children/{childId}` | `parentUid`, child `name`, `createdAt`; ownership root. | `createChild` trusted function. | App listens to child subpaths; acknowledgement reads owner. | Parent read only if root `parentUid` matches Auth UID; trusted server writes. |
 | `children/{childId}/latestLocation` | `lat`, `lng`, `timestamp`, `eventId`, optional `accuracyMeters`. | `ingestLocation` Admin SDK. | App realtime listener; `processLocation` trigger. | Parent read; client write denied. Device HTTP auth checked in Function. |
 | `children/{childId}/Data` | Legacy `latt`, `longg` string fallback. | `processLocation`. | App fallback listener. | Parent read; client write denied. |
+| `/Data` | Legacy shared demo record: `latt`, `longg`, `sos`, optional `timestamp`/`lastSeen`. | Existing legacy writer or Firebase Console; no current Functions bridge writes this root path. | App fallback only when authenticated user has no linked child. | Local rule permits any authenticated user to read; not owner-scoped and not suitable for production. |
 | `children/{childId}/device` | `telemetry`, `lastSeen`, `online`, `gpsFix`, `zoneState`. | `processLocation` / `processWearableEvents`. | App status listener. | Parent read; client write denied. Offline timeout writer is absent. |
 | `children/{childId}/safeZones/{zoneId}` | `name`, `lat`, `lng`, `radiusMeters`, `updatedAt`. | Parent app; owner rule validates field types/ranges. | App and location trigger. | Authenticated owner write; parent read through child ownership. |
 | `children/{childId}/geofenceState` | Per-zone previous inside booleans and `_lastTimestamp`. | `processLocation`. | `processLocation`. | Server-trusted state; parent readable through child read. No client write rule. |
@@ -276,7 +279,7 @@ On every accepted latest-location update, the trusted database trigger uses its 
 | `children/{childId}/locationHistory/{eventId}` | `lat`, `lng`, `timestamp`, optional address. | `processLocation`. | App ordered listener/query. | Client writes denied; timestamp index configured; live deployment unverified. |
 | `deviceCredentials/{childId}` | `tokenHash`, `createdAt`; never raw token. | `createChild`. | `authenticateDevice` in Admin context. | Client read/write denied; device presents raw token only in HTTPS header. |
 
-Coordinate names accepted by the frontend helper are `lat`/`lng`, `latitude`/`longitude`, and legacy `latt`/`longg`. It accepts timestamps `timestamp`, `updatedAt`, or `recordedAt` for display; current backend writes numeric millisecond timestamps. Geofence trigger parses `timestamp` or `updatedAt`.
+Coordinate names accepted by the frontend helper are `lat`/`lng`, `latitude`/`longitude`, and legacy `latt`/`longg`. It accepts timestamps `timestamp`, `lastSeen`, `updatedAt`, or `recordedAt` for display; current backend writes numeric millisecond timestamps. Geofence trigger parses `timestamp` or `updatedAt`.
 
 The rules start with root `.read:false` and `.write:false`; matching scoped rules grant parent access. Child location/device/alerts/history writes are denied to web clients. The Admin SDK in Functions bypasses RTDB rules, so the receiver's token and payload validation is essential. Device credential hashes are not readable or writable by a browser. No rule should be weakened to make an unexplained UI error disappear.
 
@@ -288,12 +291,14 @@ The detailed backend exports are described above. This table lists the meaningfu
 |---|---|---|---|
 | `$`, `setText` | `web/app.js` | DOM ID/value; safely finds element and sets text when present. | Browser render helpers. |
 | `authError` | `web/app.js` | Firebase error code; returns readable text. | Auth form/listener catch paths. |
-| `startDemoMode`, `simulateDemoMove`, `simulateDemoSos` | `web/app.js` | No live data; create in-memory clearly labeled demo state. | Only explicit `?dev=1` controls. Never Firebase. |
+| `deviceState` | `web/location-state.mjs` | Latest GPS point and current time; returns online only while location data is fresh. | App status rendering; 15-second GPS timeout. |
+| `isSosRisingEdge` | `web/location-state.mjs` | Previous/current `sos` values; returns true only on `0` → `1`. | Realtime SOS listener and tests. |
 | `clearData`, `showNotice`, `hideNotice` | `web/app.js` | Current view/listener state or message; unsubscribe/reset or update banner. | Auth and child transitions/errors. |
 | `watch` | `web/app.js` | Path, callback, optional query; attaches `onValue` and stores unsubscribe. | Database subscription helpers. |
 | `watchChildren` | `web/app.js` | Current user's child-link data; selects existing child or displays onboarding. | Auth state callback. |
 | `selectChild` | `web/app.js` | Child ID/profile; clears old child listeners and initializes selected view. | `watchChildren`. |
-| `watchChildData` | `web/app.js` | Child ID; attaches listeners for location/device/zones/alerts/history. | `selectChild`. |
+| `watchChildData`, `startRootDataListener` | `web/app.js` | Child ID or demo root record; attach realtime listeners for child data or legacy `/Data`. | `selectChild` / no-linked-child demo fallback. |
+| `watchDatabaseConnection`, `setFirebaseStatus` | `web/app.js` | RTDB `.info/connected` and listener errors; update visible status and console diagnostics. | Authenticated app session and RTDB listeners. |
 | `cacheLocation`, `readCachedLocation` | `web/app.js` | Child ID and normalized point; preserve/read last successful point locally. | Location listener and child selection. |
 | `escapeHtml`, `timeMs`, `dateText` | `web/app.js` | Text/time value; escape generated content or normalize/format time. | HTML rows and renderers. |
 | `initMaps`, `centerOnChild` | `web/app.js` | Leaflet/map element IDs or current point; initialize maps/tiles or recenter. | Auth setup and explicit center button. |
@@ -303,7 +308,7 @@ The detailed backend exports are described above. This table lists the meaningfu
 | `alertHtml`, `renderAlerts` | `web/app.js` | Alert data; produce SOS/geofence row and acknowledgement/location controls. | Alert listener. |
 | `loadOlderHistory` | `web/app.js` | Oldest loaded timestamp; queries earlier records and merges unique IDs. | Load-older button. |
 | `showView` | `web/app.js` | View key; hides other sections and updates nav/map sizes. | Navigation and links. |
-| `normalizePoint`, `isFresh`, `locationState`, `locationLabel`, `firebaseReadError` | `web/location-state.mjs` | Point/device/time/error; normalize and classify/display location. | App renderers and listener errors. |
+| `normalizePoint`, `isFresh`, `deviceState`, `locationState`, `locationLabel`, `firebaseReadError` | `web/location-state.mjs` | Point/time/error; normalize and classify/display GPS location and connection status. | App renderers and listener errors. |
 | `valid`, `millis`, `validChildId`, `validEventId`, `authenticateDevice` | `functions/index.js` | Coordinates, times, IDs, HTTP request; validate and authenticate. | HTTP receivers and triggers. |
 | `createChild`, `ingestLocation`, `ingestTelemetry`, `acknowledgeAlert` | `functions/index.js` | Auth callable or device HTTP payload. | Browser onboarding/acknowledgement or ESP32. |
 | `processLocation`, `processWearableEvents` | `functions/index.js` | Firebase before/after snapshots. | Automatically invoked only by deployed RTDB triggers. |
@@ -341,7 +346,7 @@ The detailed backend exports are described above. This table lists the meaningfu
 1. Install Python 3.
 2. From the repository root run `python local_simulator.py`.
 3. Open `http://localhost:8000` (or the port set by `CHILDLINK_PORT`). The server binds to loopback and only serves static files.
-4. For the real app, Firebase values must match the intended Firebase web app. `?dev=1` opens an isolated simulated view for visual demonstration only; it is not a Firebase account or hardware test.
+4. For the real app, Firebase values must match the intended Firebase web app. The app has no simulated locations; sign in to see data associated with the Firebase account. The app uses Realtime Database (`getDatabase`/`onValue`), not Firestore. Its observed legacy compatibility record is root `/Data` with `latt`, `longg`, and `sos`; zero coordinates are treated as invalid GPS.
 
 ### Run tests
 
@@ -412,7 +417,7 @@ Latest local test run reported both suites passing. Firebase CLI access failed w
 
 - Compile and flash with actual private config and verified root CA.
 - Confirm Wi-Fi, GPS fix, fresh location POST response, database timestamp, parent map/status update, history row, geofence event, and SOS alert.
-- Test GPS loss, Wi-Fi loss, recovery, and SOS retry without GPS. Confirm old points remain marked last-known/stale and no fabricated coordinates appear.
+- Test GPS loss, Wi-Fi loss, recovery, and SOS retry without GPS. Confirm old points remain marked last-known/offline and no fabricated coordinates appear.
 
 ### Requires hardware engineer confirmation
 
@@ -427,7 +432,7 @@ Latest local test run reported both suites passing. Firebase CLI access failed w
 3. Power wearable outdoors; check serial logs for GPS validity and HTTP 202; verify a new database timestamp and the same point/state in the app.
 4. Create a zone at a known real location; take the tracker across its boundary; verify one entry/exit alert per transition and stored history points.
 5. Press the physical SOS button; verify one alert, its event timestamp, and coordinates only if the device had a fresh fix. Acknowledge it as the owner and confirm another parent cannot do so.
-6. Interrupt/recover Wi-Fi or GPS; verify connection errors and last-known/stale behavior, then verify fresh updates resume without a page refresh or duplicate alert storm.
+6. Interrupt/recover Wi-Fi or GPS; verify connection errors and last-known/offline behavior, then verify fresh updates resume without a page refresh or duplicate alert storm.
 
 ## 11. Deployment command reference (not run)
 
