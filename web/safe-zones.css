@@ -1,0 +1,9 @@
+.zone-map-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 8px}
+.zone-map-actions .hint{margin:0}
+.zone-row{align-items:flex-start}
+.zone-state{display:inline-block;margin-top:5px;padding:3px 7px;border-radius:999px;font-size:9px;font-weight:800;letter-spacing:.04em}
+.zone-state.inside{background:#e8f5eb;color:#277243}
+.zone-state.outside{background:#fff0e8;color:#a6532c}
+.zone-state.unknown{background:#f0f2f0;color:#69756d}
+.zone-preview{color:#28794a}
+@media(max-width:680px){.zone-map-actions{align-items:flex-start;flex-direction:column}.zone-map-actions .button{width:100%}}

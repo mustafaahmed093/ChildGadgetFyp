@@ -50,6 +50,29 @@ export function classifyZone(distance, radius, previousInside, margin = 20) {
   return { inside, transition };
 }
 
+export function safeZoneState(point, zone, previousInside, now = Date.now(), staleAfterMs = 15_000) {
+  const location = normalizePoint(point);
+  const lat = Number(zone?.lat ?? zone?.latitude);
+  const lng = Number(zone?.lng ?? zone?.longitude);
+  const radius = Number(zone?.radiusMeters ?? zone?.radius);
+  if (!location || (location.clientEstimatedTimestamp && !location.clientObservedFresh)
+    || deviceState(location, now, staleAfterMs) !== 'ONLINE'
+    || !Number.isFinite(lat) || Math.abs(lat) > 90
+    || !Number.isFinite(lng) || Math.abs(lng) > 180
+    || !Number.isFinite(radius) || radius < 25 || radius > 10_000) {
+    return { state: 'UNKNOWN', inside: null, transition: null, distanceMeters: null };
+  }
+
+  const distance = distanceMeters(location, { lat, lng });
+  const result = classifyZone(distance, radius, previousInside);
+  return {
+    state: result.inside ? 'INSIDE' : 'OUTSIDE',
+    inside: result.inside,
+    transition: result.transition,
+    distanceMeters: distance
+  };
+}
+
 export function locationState(point, now = Date.now(), staleAfterMs = 15_000) {
   const validPoint = normalizePoint(point);
   if (!validPoint) return 'LOCATION UNAVAILABLE';

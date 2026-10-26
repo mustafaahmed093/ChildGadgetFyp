@@ -8,6 +8,7 @@ const { distanceMeters, classifyZone } = require('./geofence');
 
 const app=initializeApp({databaseURL:'https://smartgrid-abc67-default-rtdb.firebaseio.com'});
 const db=getDatabase(app);
+const locationFreshnessMs=15_000;
 const valid = (lat,lng) => Number.isFinite(lat)&&Number.isFinite(lng)&&Math.abs(lat)<=90&&Math.abs(lng)<=180&&!(lat===0&&lng===0);
 const millis = value => typeof value==='number'?value:Date.parse(value||'')||0;
 const validChildId = value => /^[A-Za-z0-9_-]{8,64}$/.test(value);
@@ -87,25 +88,25 @@ exports.processLocation = onValueWritten({ref:'/children/{childId}/latestLocatio
   const lat=Number(location.lat??location.latitude??location.latt),lng=Number(location.lng??location.longitude??location.longg);
   if(!valid(lat,lng)){logger.warn('Ignored invalid GPS coordinates',{childId:event.params.childId});return}
   const timestamp=millis(location.timestamp??location.updatedAt);
-  if(!timestamp||Date.now()-timestamp>120000||timestamp>Date.now()+60000)return;
+  if(!timestamp||Date.now()-timestamp>locationFreshnessMs||timestamp>Date.now()+60000)return;
   const childRef=db.ref(`children/${event.params.childId}`),stateRef=childRef.child('geofenceState');
   const previous=(await stateRef.get()).val()||{};
   const gate=await stateRef.child('_lastTimestamp').transaction(value=>value==null||timestamp>value?timestamp:value);
   if(!gate.committed||Number(gate.snapshot.val())!==timestamp)return;
-  const zoneData=(await childRef.child('safeZones').get()).val()||{},current={},accuracy=Number(location.accuracyMeters),margin=Number.isFinite(accuracy)?Math.max(15,Math.min(50,accuracy)):20;
+  const zoneData=(await childRef.child('safeZones').get()).val()||{},current={},zoneConfig={},accuracy=Number(location.accuracyMeters),margin=Number.isFinite(accuracy)?Math.max(15,Math.min(50,accuracy)):20;
   for(const [zoneId,zone] of Object.entries(zoneData)){
     const zlat=Number(zone.lat??zone.latitude),zlng=Number(zone.lng??zone.longitude),radius=Number(zone.radiusMeters??zone.radius);
     if(!valid(zlat,zlng)||!Number.isFinite(radius)||radius<25)continue;
-    const distance=distanceMeters({lat,lng},{lat:zlat,lng:zlng}),wasInside=Object.hasOwn(previous,zoneId)?previous[zoneId]===true:undefined;
+    const signature=`${zlat}:${zlng}:${radius}`,distance=distanceMeters({lat,lng},{lat:zlat,lng:zlng}),wasInside=previous._zoneConfig?.[zoneId]===signature&&typeof previous[zoneId]==='boolean'?previous[zoneId]:undefined;
     const {inside,transition}=classifyZone(distance,radius,wasInside,margin);
-    current[zoneId]=inside;
+    current[zoneId]=inside;zoneConfig[zoneId]=signature;
     if(transition){
       const id=`geo_${zoneId}_${timestamp}_${inside?'in':'out'}`;
       const alertRef=childRef.child(`alerts/${id}`);
       await alertRef.transaction(existing=>existing||{type:transition,zoneId,zoneName:zone.name||'Safe zone',timestamp,lat,lng,source:'trusted_cloud_function',acknowledged:false});
     }
   }
-  await stateRef.update({...current,_lastTimestamp:timestamp});
+  await stateRef.update({...current,_zoneConfig:zoneConfig,_lastTimestamp:timestamp});
   await childRef.child('device').update({lastSeen:timestamp,zoneState:Object.keys(zoneData).length?(Object.values(current).some(Boolean)?'Inside one or more safe zones':'Outside all safe zones'):'No safe zones configured'});
   // Preserve the existing legacy coordinate field names within the secured child record.
   await childRef.child('Data').update({latt:String(lat),longg:String(lng)});
